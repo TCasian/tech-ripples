@@ -32,8 +32,8 @@ export default async function handler(req, res) {
     await transporter.sendMail(mailOptions);
 
     return res.status(200).json({ message: "OTP sent successfully" });
-  } catch (error) {
-    console.error("Error sending email:", error);
-    return res.status(500).json({ error: "Failed to send OTP" });
+  } catch (errore) {
+    console.error("Error sending email:", errore);
+    return res.status(500).json({ error: "Failed to send OTP", errore });
   }
 }
