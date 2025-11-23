@@ -62,10 +62,6 @@ function Signup() {
     symbol: /[@$!%*?&-]/.test(form.password),
   };
 
-  // Funzione fittizia (rimossa o modificata, non necessaria se usiamo la Edge Function)
-  // async function sendEmails(email) { ... }
-
-  // --- LOGICA TIMER (USATO PER IL RE-INVIO OTP) ---
   useEffect(() => {
     if (
       loading &&
@@ -151,15 +147,17 @@ function Signup() {
     setStatus((prev) => ({ ...prev, code: null }));
 
     try {
-      // Chiamata all'API Vercel per la verifica
-      const response = await fetch("/api/verify-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: userId,
-          otp_code: otpValue,
-        }),
-      });
+      const response = await fetch(
+        "https://techripples.vercel.app/api/verify-otp",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: userId,
+            otp_code: otpValue,
+          }),
+        }
+      );
 
       const data = await response.json();
 
@@ -232,9 +230,7 @@ function Signup() {
     }));
   };
 
-  // --- LOGICA DI REGISTRAZIONE (CHIAMA EDGE FUNCTION SUPABASE) ---
   async function handleRegister(username, email, password) {
-    // Prima verifica frontend completa
     const allValid =
       Object.values(status.valid).every((v) => v === true) &&
       form.username &&
@@ -255,20 +251,38 @@ function Signup() {
 
     switch (error || data?.message) {
       case "USERNAME_TAKEN":
-        // ... (Gestione errore USERNAME_TAKEN) ...
+        setStatus((prev) => ({
+          errors: {
+            ...prev.errors,
+            username: "Username already taken. Please choose another one.",
+          },
+          valid: { ...prev.valid, username: false },
+        }));
+        setTakenData((prev) => ({
+          ...prev,
+          usernames: [...prev.usernames, username],
+        }));
         break;
       case "EMAIL_TAKEN":
-        // ... (Gestione errore EMAIL_TAKEN) ...
+        setStatus((prev) => ({
+          errors: {
+            ...prev.errors,
+            email: "Email already registered. Please use another email.",
+          },
+          valid: { ...prev.valid, email: false },
+        }));
+        setTakenData((prev) => ({
+          ...prev,
+          emails: [...prev.emails, email],
+        }));
         break;
       case "OK_SUCCESS":
-        // ** SUCCESSO REGISTRAZIONE: PASSA ALLA FASE OTP **
+        alert("registrato");
         if (receivedUserId) {
           setUserId(receivedUserId);
-          setLoading(true); // Passa alla vista di verifica OTP
-          setCode(new Array(6).fill("")); // Pulisci i campi OTP
-          inputsRef.current[0]?.focus(); // Focus sul primo campo
-          // Avviamo anche il re-invio iniziale (se non è stato inviato dall'Edge Function)
-          // Presumiamo che l'Edge Function lo abbia già inviato.
+          setLoading(true);
+          setCode(new Array(6).fill(""));
+          inputsRef.current[0]?.focus();
           setResendStatus((prev) => ({
             ...prev,
             timer: RESEND_TIMER_SECONDS,
@@ -288,7 +302,6 @@ function Signup() {
     setIsProcessing(false);
   }
 
-  // Funzione per la gestione del tasto indietro nell'input OTP
   const handleCodeKeyDown = (e, i) => {
     if (e.key === "Backspace" && !code[i] && i > 0) {
       inputsRef.current[i - 1]?.focus();
