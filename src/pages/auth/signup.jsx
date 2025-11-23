@@ -5,50 +5,38 @@ import { CheckboxItem } from "../../componenti/checkbox";
 import Typewriter from "../../componenti/Typewriter.jsx";
 import { useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
-// Assumi che SupabaseClient abbia un metodo per interagire con la Edge Function
 import { SupabaseClient } from "../../services/supabaseClient.js";
 
-// --- Configurazione Timer Anti-Spam ---
 const RESEND_TIMER_SECONDS = 60;
 
 function Signup() {
-  // --- Espressioni Regolari ---
   const usernameRegex = /^[a-zA-Z0-9._]{3,20}$/;
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const passwordRegex =
     /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&-])[A-Za-z\d@$!%*?&-]{8,}$/;
-
-  // --- Stati ---
   const navigate = useNavigate();
   const dispatch = useDispatch();
-
   const [form, setForm] = useState({
     username: "",
     email: "",
     password: "",
   });
-
   const [status, setStatus] = useState({
     errors: {},
     valid: {},
-    code: null, // Nuovo stato per errori OTP
+    code: null,
   });
-
-  // STATI AGGIUNTI PER IL FLUSSO OTP
-  const [loading, setLoading] = useState(false); // Determina se siamo in Stage 1 o 2
-  const [isProcessing, setIsProcessing] = useState(false); // Per il pulsante OTP/Registro
-  const [userId, setUserId] = useState(null); // ID utente ricevuto dopo il successo della registrazione/richiesta OTP
-  const [code, setCode] = useState(new Array(6).fill("")); // Array per i 6 input OTP
-  const inputsRef = useRef([]); // Riferimenti per le caselle OTP
-
+  const [loading, setLoading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [userId, setUserId] = useState(null);
+  const [code, setCode] = useState(new Array(6).fill(""));
+  const inputsRef = useRef([]);
   const [resendStatus, setResendStatus] = useState({
     timer: RESEND_TIMER_SECONDS,
     canResend: false,
     isResending: false,
     resendMessage: null,
   });
-
-  // Vecchi stati
   const [takenData, setTakenData] = useState({
     usernames: [],
     emails: [],
@@ -247,7 +235,7 @@ function Signup() {
 
     const data = await client.create_account(username, email, password);
     const error = data?.error;
-    const receivedUserId = data?.user_id; // L'Edge Function dovrebbe restituire l'ID utente
+    const receivedUserId = data?.user_id;
 
     switch (error || data?.message) {
       case "USERNAME_TAKEN":
