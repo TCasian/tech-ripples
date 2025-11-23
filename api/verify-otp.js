@@ -14,7 +14,7 @@ export default async function handler(req, res) {
 
   // Inizializzazione client Supabase con la CHIAVE SERVICE ROLE
   const supabase = createClient(
-    process.env.SUPABASE_URL,
+    process.env.VITE_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY // Richiesta per bypassare RLS e accedere alla tabella OTP
   );
 
@@ -68,12 +68,10 @@ export default async function handler(req, res) {
       // Non blocchiamo la risposta di successo, ma logghiamo l'errore
     }
 
-    return res
-      .status(200)
-      .json({
-        message:
-          "OTP verificato con successo. Procedi con la registrazione/login.",
-      });
+    return res.status(200).json({
+      message:
+        "OTP verificato con successo. Procedi con la registrazione/login.",
+    });
   } catch (error) {
     console.error("Error during OTP verification:", error);
     return res.status(500).json({ error: "Internal Server Error." });

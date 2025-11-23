@@ -11,16 +11,6 @@ import Home from "./pages/home/Home.jsx";
 import { TermsOfService } from "./pages/policy/terms-of-service.jsx";
 
 function App() {
-  useEffect(() => {
-    const load = async () => {
-      fetch("/api/test")
-        .then((res) => res.json())
-        .then((data) => console.log(data));
-    };
-
-    load();
-  }, []);
-
   return (
     <Router>
       <Routes>
