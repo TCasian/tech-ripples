@@ -18,8 +18,8 @@ export default async function handler(req, res) {
       secure: false,
       requireTLS: true,
       auth: {
-        user: import.meta.env.GMAIL_USER,
-        pass: import.meta.env.GMAIL_APP_PASS,
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASS,
       },
     });
 
