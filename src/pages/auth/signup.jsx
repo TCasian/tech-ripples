@@ -296,10 +296,24 @@ function Signup() {
     }
   };
 
-  // --- RENDER ---
   return (
     <div className="container-auth">
-      {/* ... (PixelBlast e Info Container) ... */}
+      <PixelBlast
+        variant="circle"
+        pixelSize={6}
+        patternScale={3}
+        patternDensity={1.2}
+        pixelSizeJitter={0.5}
+        rippleThickness={0.12}
+        rippleIntensityScale={1.5}
+        liquid
+        liquidStrength={0}
+        liquidRadius={1.2}
+        liquidWobbleSpeed={5}
+        speed={0.6}
+        edgeFade={0.25}
+        transparent
+      />
 
       <div className="info-container">
         <img src="Logo.svg" alt="Logo" className="logo" />
