@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import "./auth.css";
 import PixelBlast from "./PixelBlast";
 import { CheckboxItem } from "../../componenti/checkbox";
@@ -6,8 +6,6 @@ import Typewriter from "../../componenti/Typewriter.jsx";
 import { useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import { SupabaseClient } from "../../services/supabaseClient.js";
-
-const RESEND_TIMER_SECONDS = 60;
 
 function Signup() {
   const usernameRegex = /^[a-zA-Z0-9._]{3,20}$/;
@@ -31,17 +29,12 @@ function Signup() {
   const [userId, setUserId] = useState(null);
   const [code, setCode] = useState(new Array(6).fill(""));
   const inputsRef = useRef([]);
-  const [resendStatus, setResendStatus] = useState({
-    timer: RESEND_TIMER_SECONDS,
-    canResend: false,
-    isResending: false,
-    resendMessage: null,
-  });
   const [takenData, setTakenData] = useState({
     usernames: [],
     emails: [],
   });
   const [showPasswordChecklist, setShowPasswordChecklist] = useState(false);
+
   const passwordChecks = {
     length: form.password.length >= 8,
     lowercase: /[a-z]/.test(form.password),
@@ -50,29 +43,7 @@ function Signup() {
     symbol: /[@$!%*?&-]/.test(form.password),
   };
 
-  useEffect(() => {
-    if (
-      loading &&
-      userId &&
-      !resendStatus.canResend &&
-      resendStatus.timer > 0
-    ) {
-      const interval = setInterval(() => {
-        setResendStatus((prev) => ({
-          ...prev,
-          timer: prev.timer - 1,
-        }));
-      }, 1000);
-      return () => clearInterval(interval);
-    } else if (resendStatus.timer === 0 && !resendStatus.canResend) {
-      setResendStatus((prev) => ({
-        ...prev,
-        canResend: true,
-      }));
-    }
-  }, [loading, userId, resendStatus.timer, resendStatus.canResend]);
-
-  // --- LOGICA PER L'INVIO AUTOMATICO DELL'OTP ALLA COMPILAZIONE ---
+  // --- INVIO AUTOMATICO OTP QUANDO COMPLETO ---
   useEffect(() => {
     const fullOtp = code.join("");
     if (fullOtp.length === 6) {
@@ -80,55 +51,7 @@ function Signup() {
     }
   }, [code]);
 
-  // --- FUNZIONE PER RICHIEDERE/RE-INVIARE L'OTP ---
-  const handleResendOtp = useCallback(async () => {
-    if (!resendStatus.canResend || !userId) return;
-
-    setResendStatus((prev) => ({
-      ...prev,
-      isResending: true,
-      canResend: false,
-      resendMessage: null,
-    }));
-    setStatus((prev) => ({ ...prev, code: null }));
-
-    try {
-      // Chiama la Edge Function di Supabase (che gestisce: Generazione -> Salvataggio Hash -> Chiamata API Vercel)
-      const response = await fetch(
-        "TUO_URL_EDGE_FUNCTION/generate-otp-and-send",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            user_id: userId,
-            email: form.email,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Errore durante il re-invio.");
-      }
-
-      setResendStatus((prev) => ({
-        ...prev,
-        timer: RESEND_TIMER_SECONDS,
-        resendMessage: "Nuovo codice inviato!",
-      }));
-    } catch (err) {
-      setStatus((prev) => ({ ...prev, code: err.message }));
-      setResendStatus((prev) => ({
-        ...prev,
-        canResend: true,
-        resendMessage: "Errore re-invio. Riprova.",
-      }));
-    } finally {
-      setResendStatus((prev) => ({ ...prev, isResending: false }));
-    }
-  }, [resendStatus.canResend, userId, form.email]);
-
-  // --- FUNZIONE PER LA VERIFICA OTP (CHIAMA API VERCEL) ---
+  // --- VERIFICA OTP ---
   const handleVerifyOtp = async (otpValue) => {
     if (isProcessing) return;
     setIsProcessing(true);
@@ -147,46 +70,50 @@ function Signup() {
         }
       );
 
-      const data = await response.json();
+      const text = await response.text(); // <-- sempre safe
+      console.log("RAW RESPONSE:", text);
+
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (err) {
+        console.error("Invalid JSON:", text);
+      }
 
       if (!response.ok) {
-        // Errore dalla funzione Serverless (es. OTP scaduto, non valido, ecc.)
         throw new Error(data.error || "Verifica fallita.");
       }
 
-      // ** VERIFICA FINALE RIUSCITA: PROCEDI CON IL LOGIN O REINDIRIZZAMENTO **
       alert("Verification successful! You can now log in.");
       navigate("/login");
     } catch (err) {
       setStatus((prev) => ({ ...prev, code: err.message }));
-      // Pulisci i campi OTP dopo un errore di verifica per sicurezza
       setCode(new Array(6).fill(""));
-      inputsRef.current[0]?.focus(); // Riporta il focus all'inizio
+      inputsRef.current[0]?.focus();
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // --- LOGICA CAMBIAMENTO INPUT (MODIFICATA PER IL FOCUS OTP) ---
+  // --- HANDLE CHANGE ---
   const handleChange = (field, value, index = 0) => {
     if (field === "code") {
       const newCode = [...code];
-
       const val = value.slice(-1);
       newCode[index] = val;
       setCode(newCode);
 
-      // Gestione del focus automatico in avanti
       if (val && index < code.length - 1) {
         inputsRef.current[index + 1]?.focus();
       }
       return;
     }
-    // Logica di validazione e stato per username/email/password
+
     setForm((prev) => ({ ...prev, [field]: value }));
+
     let error = "";
     let isValid = false;
-    // ... (restante logica di validazione)
+
     switch (field) {
       case "username":
         if (!usernameRegex.test(value))
@@ -195,12 +122,14 @@ function Signup() {
           error = "Username already taken";
         else isValid = true;
         break;
+
       case "email":
         if (!emailRegex.test(value)) error = "Invalid email format";
         else if (takenData.emails.includes(value))
           error = "Email already taken";
         else isValid = true;
         break;
+
       case "password":
         if (!passwordRegex.test(value)) error = "Weak password";
         else {
@@ -212,18 +141,21 @@ function Signup() {
       default:
         break;
     }
+
     setStatus((prev) => ({
       errors: { ...prev.errors, [field]: error },
       valid: { ...prev.valid, [field]: isValid },
     }));
   };
 
+  // --- REGISTRAZIONE ---
   async function handleRegister(username, email, password) {
     const allValid =
       Object.values(status.valid).every((v) => v === true) &&
       form.username &&
       form.email &&
       form.password;
+
     if (!allValid) {
       alert("Please correct the errors in the form.");
       return;
@@ -232,8 +164,8 @@ function Signup() {
     setIsProcessing(true);
 
     const client = new SupabaseClient();
-
     const data = await client.create_account(username, email, password);
+
     const error = data?.error;
     const receivedUserId = data?.user_id;
 
@@ -251,6 +183,7 @@ function Signup() {
           usernames: [...prev.usernames, username],
         }));
         break;
+
       case "EMAIL_TAKEN":
         setStatus((prev) => ({
           errors: {
@@ -264,6 +197,7 @@ function Signup() {
           emails: [...prev.emails, email],
         }));
         break;
+
       case "OK_SUCCESS":
         alert("registrato");
         if (receivedUserId) {
@@ -271,22 +205,18 @@ function Signup() {
           setLoading(true);
           setCode(new Array(6).fill(""));
           inputsRef.current[0]?.focus();
-          setResendStatus((prev) => ({
-            ...prev,
-            timer: RESEND_TIMER_SECONDS,
-            canResend: false,
-            isResending: false,
-          }));
         } else {
           alert(
             "Registration succeeded, but failed to get user ID for verification."
           );
         }
         break;
+
       default:
         alert("An unexpected error occurred. Please try again later.");
         break;
     }
+
     setIsProcessing(false);
   }
 
@@ -327,9 +257,7 @@ function Signup() {
         />
       </div>
 
-      {/* Lo stato 'loading' è usato per commutare tra il form di registrazione e il form OTP */}
       {!loading ? (
-        // --- STAGE 1: Form di Registrazione (Signup) ---
         <form
           className="div-auth"
           onSubmit={(e) => {
@@ -340,7 +268,7 @@ function Signup() {
           <h1 style={{ color: "#fff", textAlign: "center", marginTop: "0px" }}>
             Sign Up For Free
           </h1>
-          {/* Input Username */}
+
           <input
             className={`input-auth ${status.valid.username ? "valid" : ""} ${
               status.errors.username ? "invalid" : ""
@@ -354,7 +282,7 @@ function Signup() {
           {status.errors.username && (
             <p className="error-text">{status.errors.username}</p>
           )}
-          {/* Input Email */}
+
           <input
             className={`input-auth ${status.valid.email ? "valid" : ""} ${
               status.errors.email ? "invalid" : ""
@@ -368,7 +296,7 @@ function Signup() {
           {status.errors.email && (
             <p className="error-text">{status.errors.email}</p>
           )}
-          {/* Input Password */}
+
           <input
             className={`input-auth ${status.valid.password ? "valid" : ""} ${
               status.errors.password ? "invalid" : ""
@@ -381,7 +309,7 @@ function Signup() {
             onChange={(e) => handleChange("password", e.target.value)}
             required
           />
-          {/* Password Checklist */}
+
           <div
             className="password-checklist"
             style={{
@@ -389,7 +317,6 @@ function Signup() {
               pointerEvents: "none",
             }}
           >
-            {/* ... (Checkbox Items) ... */}
             <CheckboxItem
               isMet={passwordChecks.length}
               label="Atlest 8 characters"
@@ -408,9 +335,10 @@ function Signup() {
             />
             <CheckboxItem
               isMet={passwordChecks.symbol}
-              label="At least one of (@$!%*?&-) "
+              label="At least one of (@$!%*?&-)"
             />
           </div>
+
           <button
             type="submit"
             className="submit-button"
@@ -418,7 +346,7 @@ function Signup() {
           >
             {isProcessing ? "Processing..." : "Create Account"}
           </button>
-          {/* ... (Disclaimer e Link Login) ... */}
+
           <div className="disclaimer-container">
             By clicking the "Create account" button, I expressly agree to the{" "}
             <span
@@ -431,16 +359,16 @@ function Signup() {
             <span className="link" onClick={() => navigate("/privacy-policy")}>
               TechRipples Privacy Policy{" "}
             </span>{" "}
-          </div>{" "}
+          </div>
+
           <div className="signup-div">
             <h4>You already have an account?</h4>{" "}
             <h4 className="link" onClick={() => navigate("/login")}>
-              Log In{" "}
-            </h4>{" "}
+              Log In
+            </h4>
           </div>
         </form>
       ) : (
-        // --- STAGE 2: Verifica Codice OTP ---
         <div className="div-auth">
           <h2>Verification Code</h2>
           <h3>
@@ -448,7 +376,6 @@ function Signup() {
             <strong style={{ color: "#fff" }}>{form.email}</strong>
           </h3>
 
-          {/* Caselle OTP */}
           <div className={`otp-container ${status.code ? "error" : ""}`}>
             {code.map((digit, i) => (
               <input
@@ -467,54 +394,11 @@ function Signup() {
             ))}
           </div>
 
-          {/* Messaggio di Errore OTP */}
           {status.code && (
             <p className="error-text" style={{ marginTop: "10px" }}>
               {status.code}
             </p>
           )}
-
-          {/* Sezione Re-invio e Timer */}
-          <div
-            className="resend-section"
-            style={{ marginTop: "20px", textAlign: "center" }}
-          >
-            <button
-              onClick={handleResendOtp}
-              disabled={
-                !resendStatus.canResend ||
-                resendStatus.isResending ||
-                isProcessing
-              }
-              className="submit-button"
-              style={{
-                backgroundColor: resendStatus.canResend
-                  ? "var(--primary-color)"
-                  : "#555",
-                cursor: resendStatus.canResend ? "pointer" : "not-allowed",
-                width: "100%",
-                marginBottom: "10px",
-              }}
-            >
-              {resendStatus.isResending
-                ? "Invio..."
-                : resendStatus.canResend
-                ? "Richiedi Nuovo Codice"
-                : `Nuovo codice tra ${resendStatus.timer}s`}
-            </button>
-
-            {resendStatus.resendMessage && (
-              <p style={{ color: "#00f0ff" }}>{resendStatus.resendMessage}</p>
-            )}
-
-            <p
-              className="antispam-note"
-              style={{ fontSize: "0.8em", color: "#aaa" }}
-            >
-              *Il pulsante di re-invio si riattiverà dopo {RESEND_TIMER_SECONDS}{" "}
-              secondi per prevenire lo spam.
-            </p>
-          </div>
         </div>
       )}
     </div>
