@@ -1,7 +1,7 @@
 import React from "react";
 import "./auth.css";
 import { useEffect, useState } from "react";
-import { supabase } from "../../supabaseClient";
+import { supabaseClient } from "../../services/supabaseClient.js";
 import PixelBlast from "./PixelBlast";
 import { Link, useNavigate } from "react-router-dom";
 import Typewriter from "../../componenti/Typewriter.jsx";
@@ -16,13 +16,10 @@ function Login() {
   const handleLogin = async (e) => {
     e.preventDefault();
     setMessage("");
+    const client = new SupabaseClient();
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
+      const { data, error } = await client.sign_in(email, password);
       if (error) {
         setMessage(`Errore: ${error.message}`);
       } else {

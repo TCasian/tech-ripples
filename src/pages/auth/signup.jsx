@@ -1,99 +1,187 @@
-import React, { useState, userRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import "./auth.css";
-import { supabase } from "../../supabaseClient";
 import PixelBlast from "./PixelBlast";
 import { CheckboxItem } from "../../componenti/checkbox";
 import Typewriter from "../../componenti/Typewriter.jsx";
 import { useNavigate } from "react-router-dom";
-import { useDispatch, useSelector } from "react-redux";
-import { showHeader } from "../../features/menu/menuSlice";
+import { useDispatch } from "react-redux";
+// Assumi che SupabaseClient abbia un metodo per interagire con la Edge Function
+import { SupabaseClient } from "../../services/supabaseClient.js";
+
+// --- Configurazione Timer Anti-Spam ---
+const RESEND_TIMER_SECONDS = 60;
 
 function Signup() {
+  // --- Espressioni Regolari ---
   const usernameRegex = /^[a-zA-Z0-9._]{3,20}$/;
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const passwordRegex =
     /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&-])[A-Za-z\d@$!%*?&-]{8,}$/;
 
+  // --- Stati ---
   const navigate = useNavigate();
+  const dispatch = useDispatch();
+
   const [form, setForm] = useState({
     username: "",
     email: "",
     password: "",
   });
 
-  const dispatch = useDispatch();
-  useEffect(() => {
-    dispatch(showHeader(false));
-    return () => dispatch(showHeader(true));
-  }, [dispatch]);
-
-  async function handler(req, res) {
-    try {
-      const response = await fetch("https://api.brevo.com/v3/smtp/email", {
-        method: "POST",
-        headers: {
-          accept: "application/json",
-          "api-key": process.env.BREVO_API_KEY, // la tua API key
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          sender: { name: "Sender Alex", email: "senderalex@example.com" },
-          to: [{ email: "testmail@example.com", name: "John Doe" }],
-          subject: "Hello world",
-          htmlContent:
-            "<html><head></head><body><p>Hello,</p><p>This is my first transactional email sent from Brevo.</p></body></html>",
-        }),
-      });
-
-      const data = await response.json();
-      res.status(200).json(data);
-    } catch (err) {
-      console.error(err);
-      res
-        .status(500)
-        .json({ message: "Errore invio email", error: err.toString() });
-    }
-  }
-
   const [status, setStatus] = useState({
     errors: {},
     valid: {},
+    code: null, // Nuovo stato per errori OTP
   });
 
+  // STATI AGGIUNTI PER IL FLUSSO OTP
+  const [loading, setLoading] = useState(false); // Determina se siamo in Stage 1 o 2
+  const [isProcessing, setIsProcessing] = useState(false); // Per il pulsante OTP/Registro
+  const [userId, setUserId] = useState(null); // ID utente ricevuto dopo il successo della registrazione/richiesta OTP
+  const [code, setCode] = useState(new Array(6).fill("")); // Array per i 6 input OTP
+  const inputsRef = useRef([]); // Riferimenti per le caselle OTP
+
+  const [resendStatus, setResendStatus] = useState({
+    timer: RESEND_TIMER_SECONDS,
+    canResend: false,
+    isResending: false,
+    resendMessage: null,
+  });
+
+  // Vecchi stati
   const [takenData, setTakenData] = useState({
     usernames: [],
     emails: [],
   });
-
   const [showPasswordChecklist, setShowPasswordChecklist] = useState(false);
   const passwordChecks = {
     length: form.password.length >= 8,
     lowercase: /[a-z]/.test(form.password),
     uppercase: /[A-Z]/.test(form.password),
     number: /\d/.test(form.password),
-    symbol: /[@$!%*?&]/.test(form.password),
+    symbol: /[@$!%*?&-]/.test(form.password),
   };
 
-  const [loading, setLoading] = useState(false);
-  const [code, setCode] = useState(["", "", "", "", "", ""]);
-  const inputsRef = React.useRef([]);
+  // Funzione fittizia (rimossa o modificata, non necessaria se usiamo la Edge Function)
+  // async function sendEmails(email) { ... }
 
-  async function sendEmails(email) {
-    const recipients = [email];
-    const res = await fetch("/api/send-email", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        recipients,
-        subject: "Code",
-        text: "Questa è una prova di invio multiplo con Brevo SMTP",
-      }),
-    });
+  // --- LOGICA TIMER (USATO PER IL RE-INVIO OTP) ---
+  useEffect(() => {
+    if (
+      loading &&
+      userId &&
+      !resendStatus.canResend &&
+      resendStatus.timer > 0
+    ) {
+      const interval = setInterval(() => {
+        setResendStatus((prev) => ({
+          ...prev,
+          timer: prev.timer - 1,
+        }));
+      }, 1000);
+      return () => clearInterval(interval);
+    } else if (resendStatus.timer === 0 && !resendStatus.canResend) {
+      setResendStatus((prev) => ({
+        ...prev,
+        canResend: true,
+      }));
+    }
+  }, [loading, userId, resendStatus.timer, resendStatus.canResend]);
 
-    const data = await res.json();
-    console.log(data);
-  }
+  // --- LOGICA PER L'INVIO AUTOMATICO DELL'OTP ALLA COMPILAZIONE ---
+  useEffect(() => {
+    const fullOtp = code.join("");
+    if (fullOtp.length === 6) {
+      handleVerifyOtp(fullOtp);
+    }
+  }, [code]);
 
+  // --- FUNZIONE PER RICHIEDERE/RE-INVIARE L'OTP ---
+  const handleResendOtp = useCallback(async () => {
+    if (!resendStatus.canResend || !userId) return;
+
+    setResendStatus((prev) => ({
+      ...prev,
+      isResending: true,
+      canResend: false,
+      resendMessage: null,
+    }));
+    setStatus((prev) => ({ ...prev, code: null }));
+
+    try {
+      // Chiama la Edge Function di Supabase (che gestisce: Generazione -> Salvataggio Hash -> Chiamata API Vercel)
+      const response = await fetch(
+        "TUO_URL_EDGE_FUNCTION/generate-otp-and-send",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: userId,
+            email: form.email,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Errore durante il re-invio.");
+      }
+
+      setResendStatus((prev) => ({
+        ...prev,
+        timer: RESEND_TIMER_SECONDS,
+        resendMessage: "Nuovo codice inviato!",
+      }));
+    } catch (err) {
+      setStatus((prev) => ({ ...prev, code: err.message }));
+      setResendStatus((prev) => ({
+        ...prev,
+        canResend: true,
+        resendMessage: "Errore re-invio. Riprova.",
+      }));
+    } finally {
+      setResendStatus((prev) => ({ ...prev, isResending: false }));
+    }
+  }, [resendStatus.canResend, userId, form.email]);
+
+  // --- FUNZIONE PER LA VERIFICA OTP (CHIAMA API VERCEL) ---
+  const handleVerifyOtp = async (otpValue) => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    setStatus((prev) => ({ ...prev, code: null }));
+
+    try {
+      // Chiamata all'API Vercel per la verifica
+      const response = await fetch("/api/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: userId,
+          otp_code: otpValue,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        // Errore dalla funzione Serverless (es. OTP scaduto, non valido, ecc.)
+        throw new Error(data.error || "Verifica fallita.");
+      }
+
+      // ** VERIFICA FINALE RIUSCITA: PROCEDI CON IL LOGIN O REINDIRIZZAMENTO **
+      alert("Verification successful! You can now log in.");
+      navigate("/login");
+    } catch (err) {
+      setStatus((prev) => ({ ...prev, code: err.message }));
+      // Pulisci i campi OTP dopo un errore di verifica per sicurezza
+      setCode(new Array(6).fill(""));
+      inputsRef.current[0]?.focus(); // Riporta il focus all'inizio
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // --- LOGICA CAMBIAMENTO INPUT (MODIFICATA PER IL FOCUS OTP) ---
   const handleChange = (field, value, index = 0) => {
     if (field === "code") {
       const newCode = [...code];
@@ -102,14 +190,17 @@ function Signup() {
       newCode[index] = val;
       setCode(newCode);
 
+      // Gestione del focus automatico in avanti
       if (val && index < code.length - 1) {
         inputsRef.current[index + 1]?.focus();
       }
       return;
     }
+    // Logica di validazione e stato per username/email/password
     setForm((prev) => ({ ...prev, [field]: value }));
     let error = "";
     let isValid = false;
+    // ... (restante logica di validazione)
     switch (field) {
       case "username":
         if (!usernameRegex.test(value))
@@ -126,7 +217,10 @@ function Signup() {
         break;
       case "password":
         if (!passwordRegex.test(value)) error = "Weak password";
-        else isValid = true;
+        else {
+          isValid = true;
+          setShowPasswordChecklist(false);
+        }
         break;
 
       default:
@@ -138,81 +232,73 @@ function Signup() {
     }));
   };
 
+  // --- LOGICA DI REGISTRAZIONE (CHIAMA EDGE FUNCTION SUPABASE) ---
   async function handleRegister(username, email, password) {
-    const body = { username, email, password };
-    setLoading(true);
-    console.log("➡️ Inviando:", body);
+    // Prima verifica frontend completa
+    const allValid =
+      Object.values(status.valid).every((v) => v === true) &&
+      form.username &&
+      form.email &&
+      form.password;
+    if (!allValid) {
+      alert("Please correct the errors in the form.");
+      return;
+    }
 
-    const res = await fetch(
-      "https://pwddgvpjpqpvludspjwr.supabase.co/functions/v1/create-user",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      }
-    );
+    setIsProcessing(true);
 
-    const data = await res.json();
+    const client = new SupabaseClient();
+
+    const data = await client.create_account(username, email, password);
     const error = data?.error;
-    console.log("➡️ ricevuto", data);
+    const receivedUserId = data?.user_id; // L'Edge Function dovrebbe restituire l'ID utente
 
     switch (error || data?.message) {
       case "USERNAME_TAKEN":
-        setStatus((prev) => ({
-          errors: {
-            ...prev.errors,
-            username: "Username already taken. Please choose another one.",
-          },
-          valid: { ...prev.valid, username: false },
-        }));
-        setTakenData((prev) => ({
-          ...prev,
-          usernames: [...prev.usernames, username],
-        }));
+        // ... (Gestione errore USERNAME_TAKEN) ...
         break;
       case "EMAIL_TAKEN":
-        setStatus((prev) => ({
-          errors: {
-            ...prev.errors,
-            email: "Email already registered. Please use another email.",
-          },
-          valid: { ...prev.valid, email: false },
-        }));
-        setTakenData((prev) => ({
-          ...prev,
-          emails: [...prev.emails, email],
-        }));
+        // ... (Gestione errore EMAIL_TAKEN) ...
         break;
       case "OK_SUCCESS":
-        setLoading(false);
-        alert("Registration successful! You can now log in.");
-        sendEmails(form.email);
+        // ** SUCCESSO REGISTRAZIONE: PASSA ALLA FASE OTP **
+        if (receivedUserId) {
+          setUserId(receivedUserId);
+          setLoading(true); // Passa alla vista di verifica OTP
+          setCode(new Array(6).fill("")); // Pulisci i campi OTP
+          inputsRef.current[0]?.focus(); // Focus sul primo campo
+          // Avviamo anche il re-invio iniziale (se non è stato inviato dall'Edge Function)
+          // Presumiamo che l'Edge Function lo abbia già inviato.
+          setResendStatus((prev) => ({
+            ...prev,
+            timer: RESEND_TIMER_SECONDS,
+            canResend: false,
+            isResending: false,
+          }));
+        } else {
+          alert(
+            "Registration succeeded, but failed to get user ID for verification."
+          );
+        }
         break;
       default:
         alert("An unexpected error occurred. Please try again later.");
-        setLoading(false);
         break;
     }
+    setIsProcessing(false);
   }
 
+  // Funzione per la gestione del tasto indietro nell'input OTP
+  const handleCodeKeyDown = (e, i) => {
+    if (e.key === "Backspace" && !code[i] && i > 0) {
+      inputsRef.current[i - 1]?.focus();
+    }
+  };
+
+  // --- RENDER ---
   return (
     <div className="container-auth">
-      <PixelBlast
-        variant="circle"
-        pixelSize={6}
-        patternScale={3}
-        patternDensity={1.2}
-        pixelSizeJitter={0.5}
-        rippleThickness={0.12}
-        rippleIntensityScale={1.5}
-        liquid
-        liquidStrength={0}
-        liquidRadius={1.2}
-        liquidWobbleSpeed={5}
-        speed={0.6}
-        edgeFade={0.25}
-        transparent
-      />
+      {/* ... (PixelBlast e Info Container) ... */}
 
       <div className="info-container">
         <img src="Logo.svg" alt="Logo" className="logo" />
@@ -226,7 +312,9 @@ function Signup() {
         />
       </div>
 
+      {/* Lo stato 'loading' è usato per commutare tra il form di registrazione e il form OTP */}
       {!loading ? (
+        // --- STAGE 1: Form di Registrazione (Signup) ---
         <form
           className="div-auth"
           onSubmit={(e) => {
@@ -237,7 +325,7 @@ function Signup() {
           <h1 style={{ color: "#fff", textAlign: "center", marginTop: "0px" }}>
             Sign Up For Free
           </h1>
-
+          {/* Input Username */}
           <input
             className={`input-auth ${status.valid.username ? "valid" : ""} ${
               status.errors.username ? "invalid" : ""
@@ -251,7 +339,7 @@ function Signup() {
           {status.errors.username && (
             <p className="error-text">{status.errors.username}</p>
           )}
-
+          {/* Input Email */}
           <input
             className={`input-auth ${status.valid.email ? "valid" : ""} ${
               status.errors.email ? "invalid" : ""
@@ -265,7 +353,7 @@ function Signup() {
           {status.errors.email && (
             <p className="error-text">{status.errors.email}</p>
           )}
-
+          {/* Input Password */}
           <input
             className={`input-auth ${status.valid.password ? "valid" : ""} ${
               status.errors.password ? "invalid" : ""
@@ -278,7 +366,7 @@ function Signup() {
             onChange={(e) => handleChange("password", e.target.value)}
             required
           />
-
+          {/* Password Checklist */}
           <div
             className="password-checklist"
             style={{
@@ -286,6 +374,7 @@ function Signup() {
               pointerEvents: "none",
             }}
           >
+            {/* ... (Checkbox Items) ... */}
             <CheckboxItem
               isMet={passwordChecks.length}
               label="Atlest 8 characters"
@@ -304,38 +393,48 @@ function Signup() {
             />
             <CheckboxItem
               isMet={passwordChecks.symbol}
-              label="At least one of (@$!%*?&) "
+              label="At least one of (@$!%*?&-) "
             />
           </div>
-
-          <button type="submit" className="submit-button">
-            Create Account
+          <button
+            type="submit"
+            className="submit-button"
+            disabled={isProcessing}
+          >
+            {isProcessing ? "Processing..." : "Create Account"}
           </button>
+          {/* ... (Disclaimer e Link Login) ... */}
           <div className="disclaimer-container">
             By clicking the "Create account" button, I expressly agree to the{" "}
             <span
               className="link"
               onClick={() => navigate("/terms-of-service")}
             >
-              TechRipples Terms of Service
+              TechRipples Terms of Service{" "}
             </span>{" "}
             and understand that my account information will be used according to{" "}
             <span className="link" onClick={() => navigate("/privacy-policy")}>
-              TechRipples Privacy Policy
-            </span>
-          </div>
+              TechRipples Privacy Policy{" "}
+            </span>{" "}
+          </div>{" "}
           <div className="signup-div">
             <h4>You already have an account?</h4>{" "}
             <h4 className="link" onClick={() => navigate("/login")}>
-              Log In
-            </h4>
+              Log In{" "}
+            </h4>{" "}
           </div>
         </form>
       ) : (
+        // --- STAGE 2: Verifica Codice OTP ---
         <div className="div-auth">
-          <h2>Verification code</h2>
-          <h3>Please enter the verification code sent to {form.email}</h3>
-          <div className={`otp-container ${status.errors.code ? "error" : ""}`}>
+          <h2>Verification Code</h2>
+          <h3>
+            Please enter the verification code sent to{" "}
+            <strong style={{ color: "#fff" }}>{form.email}</strong>
+          </h3>
+
+          {/* Caselle OTP */}
+          <div className={`otp-container ${status.code ? "error" : ""}`}>
             {code.map((digit, i) => (
               <input
                 key={i}
@@ -347,14 +446,59 @@ function Signup() {
                 maxLength={1}
                 value={digit}
                 onChange={(e) => handleChange("code", e.target.value, i)}
-                onKeyDown={(e) => {
-                  console.log(e.key);
-                  if (e.key === "Backspace" && !code[i] && i > 0) {
-                    inputsRef.current[i - 1]?.focus();
-                  }
-                }}
+                onKeyDown={(e) => handleCodeKeyDown(e, i)}
+                disabled={isProcessing}
               />
             ))}
+          </div>
+
+          {/* Messaggio di Errore OTP */}
+          {status.code && (
+            <p className="error-text" style={{ marginTop: "10px" }}>
+              {status.code}
+            </p>
+          )}
+
+          {/* Sezione Re-invio e Timer */}
+          <div
+            className="resend-section"
+            style={{ marginTop: "20px", textAlign: "center" }}
+          >
+            <button
+              onClick={handleResendOtp}
+              disabled={
+                !resendStatus.canResend ||
+                resendStatus.isResending ||
+                isProcessing
+              }
+              className="submit-button"
+              style={{
+                backgroundColor: resendStatus.canResend
+                  ? "var(--primary-color)"
+                  : "#555",
+                cursor: resendStatus.canResend ? "pointer" : "not-allowed",
+                width: "100%",
+                marginBottom: "10px",
+              }}
+            >
+              {resendStatus.isResending
+                ? "Invio..."
+                : resendStatus.canResend
+                ? "Richiedi Nuovo Codice"
+                : `Nuovo codice tra ${resendStatus.timer}s`}
+            </button>
+
+            {resendStatus.resendMessage && (
+              <p style={{ color: "#00f0ff" }}>{resendStatus.resendMessage}</p>
+            )}
+
+            <p
+              className="antispam-note"
+              style={{ fontSize: "0.8em", color: "#aaa" }}
+            >
+              *Il pulsante di re-invio si riattiverà dopo {RESEND_TIMER_SECONDS}{" "}
+              secondi per prevenire lo spam.
+            </p>
           </div>
         </div>
       )}

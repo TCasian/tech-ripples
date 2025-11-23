@@ -2,7 +2,6 @@ import "./App.css";
 import Header from "./componenti/Header.jsx";
 import { useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import { supabase } from "./supabaseClient.js";
 import Security from "./pages/security/security";
 import AddArticles from "./pages/add-articles/add-articles";
 import Login from "./pages/auth/login";
@@ -13,21 +12,13 @@ import { TermsOfService } from "./pages/policy/terms-of-service.jsx";
 
 function App() {
   useEffect(() => {
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("⚡ Evento auth:", event);
-      if (session?.user) {
-        console.log("🔐 Loggato:", session.user);
-      } else {
-        console.log("🚪 Logout o sessione scaduta");
-      }
-      if (window.google && window.google.accounts?.id) {
-        window.google.accounts.id.disableAutoSelect();
-      }
-    });
+    const load = async () => {
+      fetch("/api/test")
+        .then((res) => res.json())
+        .then((data) => console.log(data));
+    };
 
-    return () => subscription.unsubscribe();
+    load();
   }, []);
 
   return (
