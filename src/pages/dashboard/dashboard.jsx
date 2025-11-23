@@ -21,9 +21,9 @@ function Dashboard() {
     const { error } = await supabase.auth.signOut();
 
     if (error) {
-      console.error("❌ Errore durante il logout:", error.message);
+      console.error(" Errore durante il logout:", error.message);
     } else {
-      console.log("✅ Logout avvenuto con successo");
+      console.log(" Logout avvenuto con successo");
       localStorage.clear(); // se salvi cose extra
       sessionStorage.clear();
       if (window.google && window.google.accounts?.id) {
