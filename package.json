@@ -22,7 +22,8 @@
     "react-redux": "^9.2.0",
     "react-router-dom": "^7.9.5",
     "three": "^0.180.0",
-    "typed.js": "^2.1.0"
+    "typed.js": "^2.1.0",
+    "bcryptjs": "^2.4.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",

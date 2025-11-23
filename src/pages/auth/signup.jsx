@@ -70,7 +70,7 @@ function Signup() {
         }
       );
 
-      const text = await response.text(); // <-- sempre safe
+      const text = await response.text();
       console.log("RAW RESPONSE:", text);
 
       let data;
