@@ -14,7 +14,7 @@ export default function Dashboard() {
         if (!u) navigate("/login");
         setUser(u);
       } catch {
-        navigate("/login");
+        alert("Errore nel recupero dell'utente. Effettua il login di nuovo.");
       }
     }
     fetchUser();
