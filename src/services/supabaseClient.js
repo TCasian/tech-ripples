@@ -40,11 +40,11 @@ export class SupabaseClient {
     return data;
   }
   async signOut() {
-    return await supabase.auth.signOut();
+    return await this.supabase.auth.signOut();
   }
 
   async getUser() {
-    const { data, error } = await supabase.auth.getUser();
+    const { data, error } = await this.supabase.auth.getUser();
     if (error) throw error;
     return data.user;
   }
