@@ -20,7 +20,7 @@ export default async function handler(req, res) {
     // 1. Recupera l'hash e la data di scadenza dal database
     const { data: otpData, error: dbError } = await supabase
       .from("otp")
-      .select("hashed_code, expires_at")
+      .select("otp_hash, expires_at")
       .eq("id", user_id) // Assumiamo che la colonna chiave sia 'id'
       .maybeSingle();
 
@@ -39,7 +39,7 @@ export default async function handler(req, res) {
 
     if (now > expiryDate) {
       // L'OTP è scaduto. Eliminiamo il record per pulizia.
-      await supabase.from("otps").delete().eq("id", user_id);
+      await supabase.from("otp").delete().eq("id", user_id);
       return res
         .status(400)
         .json({ error: "OTP scaduto. Richiedine uno nuovo." });
@@ -55,7 +55,7 @@ export default async function handler(req, res) {
 
     // Passo Finale: Eliminazione dell'OTP per impedirne il riutilizzo
     const { error: deleteError } = await supabase
-      .from("otps")
+      .from("otp")
       .delete()
       .eq("id", user_id);
 
