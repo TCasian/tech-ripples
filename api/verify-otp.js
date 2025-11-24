@@ -46,7 +46,7 @@ export default async function handler(req, res) {
     }
 
     // 3. Confronta l'OTP in chiaro con l'hash salvato
-    const isMatch = await bcrypt.compare(otp_code, otpData.hashed_code);
+    const isMatch = await bcrypt.compare(otp_code, otpData.otp_hash);
 
     if (!isMatch) {
       // L'OTP non è valido. Non eliminiamo il record per permettere altri tentativi.
