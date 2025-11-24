@@ -11,17 +11,15 @@ export default async function handler(req, res) {
   if (!user_id || !otp_code || otp_code.length !== 6) {
     return res.status(400).json({ error: "Invalid request parameters." });
   }
-
-  // Inizializzazione client Supabase con la CHIAVE SERVICE ROLE
   const supabase = createClient(
     process.env.VITE_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY // Richiesta per bypassare RLS e accedere alla tabella OTP
+    process.env.SUPABASE_SERVICE_ROLE_KEY
   );
 
   try {
     // 1. Recupera l'hash e la data di scadenza dal database
     const { data: otpData, error: dbError } = await supabase
-      .from("otps")
+      .from("otp")
       .select("hashed_code, expires_at")
       .eq("id", user_id) // Assumiamo che la colonna chiave sia 'id'
       .maybeSingle();
@@ -54,8 +52,6 @@ export default async function handler(req, res) {
       // L'OTP non è valido. Non eliminiamo il record per permettere altri tentativi.
       return res.status(400).json({ error: "Codice OTP non valido." });
     }
-
-    // 4. Successo: OTP valido e non scaduto.
 
     // Passo Finale: Eliminazione dell'OTP per impedirne il riutilizzo
     const { error: deleteError } = await supabase
