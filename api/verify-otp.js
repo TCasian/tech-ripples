@@ -61,7 +61,6 @@ export default async function handler(req, res) {
 
     if (deleteError) {
       console.error("Failed to delete OTP:", deleteError);
-      // Non blocchiamo la risposta di successo, ma logghiamo l'errore
     }
 
     return res.status(200).json({
