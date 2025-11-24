@@ -42,6 +42,8 @@ function Signup() {
     if (validCode && userId) {
       const timeout = setTimeout(async () => {
         try {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+
           const client = new SupabaseClient();
           await client.sign_in(form.email, form.password);
           navigate("/dashboard");
