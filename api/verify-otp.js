@@ -27,33 +27,26 @@ export default async function handler(req, res) {
     if (dbError) throw dbError;
 
     if (!otpData) {
-      // L'OTP non esiste per questo utente
       return res
         .status(404)
         .json({ error: "OTP non trovato. Richiedine uno nuovo." });
     }
 
-    // 2. Verifica la scadenza
     const now = new Date();
     const expiryDate = new Date(otpData.expires_at);
 
     if (now > expiryDate) {
-      // L'OTP è scaduto. Eliminiamo il record per pulizia.
       await supabase.from("otp").delete().eq("id", user_id);
       return res
         .status(400)
         .json({ error: "OTP scaduto. Richiedine uno nuovo." });
     }
 
-    // 3. Confronta l'OTP in chiaro con l'hash salvato
     const isMatch = await bcrypt.compare(otp_code, otpData.otp_hash);
 
     if (!isMatch) {
-      // L'OTP non è valido. Non eliminiamo il record per permettere altri tentativi.
       return res.status(400).json({ error: "Codice OTP non valido." });
     }
-
-    // Passo Finale: Eliminazione dell'OTP per impedirne il riutilizzo
     const { error: deleteError } = await supabase
       .from("otp")
       .delete()
@@ -61,6 +54,15 @@ export default async function handler(req, res) {
 
     if (deleteError) {
       console.error("Failed to delete OTP:", deleteError);
+    }
+
+    const { error: activateUser } = await supabase
+      .from("authors")
+      .update({ verified: true })
+      .eq("id", user_id);
+
+    if (activateUser) {
+      console.error("Failed to update user status:", activateUser);
     }
 
     return res.status(200).json({

@@ -25,7 +25,28 @@ export class SupabaseClient {
   }
 
   async sign_in(email, password) {
-    return await this.supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await this.supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) throw error;
+    const { data: authorData, error: dbError } = await this.supabase
+      .from("authors")
+      .select("verified")
+      .eq("email", email)
+      .single();
+    if (dbError) throw dbError;
+    if (!authorData?.verified) throw new Error("User is not verified");
+    return data;
+  }
+  async signOut() {
+    return await supabase.auth.signOut();
+  }
+
+  async getUser() {
+    const { data, error } = await supabase.auth.getUser();
+    if (error) throw error;
+    return data.user;
   }
 }
 

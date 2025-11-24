@@ -4,36 +4,25 @@ import PixelBlast from "./PixelBlast";
 import { CheckboxItem } from "../../componenti/checkbox";
 import Typewriter from "../../componenti/Typewriter.jsx";
 import { useNavigate } from "react-router-dom";
-import { useDispatch } from "react-redux";
 import { SupabaseClient } from "../../services/supabaseClient.js";
 
 function Signup() {
-  const usernameRegex = /^[a-zA-Z0-9._]{3,20}$/;
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const passwordRegex =
-    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&-])[A-Za-z\d@$!%*?&-]{8,}$/;
   const navigate = useNavigate();
-  const dispatch = useDispatch();
-  const [form, setForm] = useState({
-    username: "",
-    email: "",
-    password: "",
-  });
-  const [status, setStatus] = useState({
-    errors: {},
-    valid: {},
-    code: null,
-  });
+  const [form, setForm] = useState({ username: "", email: "", password: "" });
+  const [status, setStatus] = useState({ errors: {}, valid: {}, code: null });
   const [loading, setLoading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [userId, setUserId] = useState(null);
   const [code, setCode] = useState(new Array(6).fill(""));
-  const inputsRef = useRef([]);
-  const [takenData, setTakenData] = useState({
-    usernames: [],
-    emails: [],
-  });
+  const [validCode, setValidCode] = useState(false);
+  const [takenData, setTakenData] = useState({ usernames: [], emails: [] });
   const [showPasswordChecklist, setShowPasswordChecklist] = useState(false);
+  const inputsRef = useRef([]);
+
+  const usernameRegex = /^[a-zA-Z0-9._]{3,20}$/;
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const passwordRegex =
+    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&-])[A-Za-z\d@$!%*?&-]{8,}$/;
 
   const passwordChecks = {
     length: form.password.length >= 8,
@@ -43,49 +32,127 @@ function Signup() {
     symbol: /[@$!%*?&-]/.test(form.password),
   };
 
-  // --- INVIO AUTOMATICO OTP QUANDO COMPLETO ---
+  // --- OTP automatic verify ---
   useEffect(() => {
-    const fullOtp = code.join("");
-    if (fullOtp.length === 6) {
-      handleVerifyOtp(fullOtp);
-    }
+    if (code.join("").length === 6) handleVerifyOtp(code.join(""));
   }, [code]);
 
-  // --- VERIFICA OTP ---
+  // --- Redirect after OTP verified ---
+  useEffect(() => {
+    if (validCode && userId) {
+      const timeout = setTimeout(async () => {
+        try {
+          const client = new SupabaseClient();
+          await client.sign_in(form.email, form.password);
+          navigate("/dashboard");
+        } catch (err) {
+          alert(err.message);
+        }
+      }, 5000);
+
+      return () => clearTimeout(timeout);
+    }
+  }, [validCode, userId]);
+
+  const handleChange = (field, value, index = 0) => {
+    if (field === "code") {
+      const newCode = [...code];
+      newCode[index] = value.slice(-1);
+      setCode(newCode);
+      if (value && index < code.length - 1)
+        inputsRef.current[index + 1]?.focus();
+      return;
+    }
+
+    setForm((prev) => ({ ...prev, [field]: value }));
+    let error = "",
+      isValid = false;
+
+    if (field === "username") {
+      if (!usernameRegex.test(value)) error = "Invalid username (3-20 chars)";
+      else if (takenData.usernames.includes(value))
+        error = "Username already taken";
+      else isValid = true;
+    } else if (field === "email") {
+      if (!emailRegex.test(value)) error = "Invalid email format";
+      else if (takenData.emails.includes(value)) error = "Email already taken";
+      else isValid = true;
+    } else if (field === "password") {
+      if (!passwordRegex.test(value)) error = "Weak password";
+      else {
+        isValid = true;
+        setShowPasswordChecklist(false);
+      }
+    }
+
+    setStatus((prev) => ({
+      errors: { ...prev.errors, [field]: error },
+      valid: { ...prev.valid, [field]: isValid },
+    }));
+  };
+
+  const handleRegister = async (username, email, password) => {
+    if (
+      !Object.values(status.valid).every(Boolean) ||
+      !username ||
+      !email ||
+      !password
+    ) {
+      alert("Please correct the errors in the form.");
+      return;
+    }
+
+    setIsProcessing(true);
+    const client = new SupabaseClient();
+    const data = await client.create_account(username, email, password);
+    const error = data?.error,
+      receivedUserId = data?.user_id;
+
+    if (error === "USERNAME_TAKEN") {
+      setStatus((prev) => ({
+        errors: { ...prev.errors, username: "Username already taken." },
+        valid: { ...prev.valid, username: false },
+      }));
+      setTakenData((prev) => ({
+        ...prev,
+        usernames: [...prev.usernames, username],
+      }));
+    } else if (error === "EMAIL_TAKEN") {
+      setStatus((prev) => ({
+        errors: { ...prev.errors, email: "Email already registered." },
+        valid: { ...prev.valid, email: false },
+      }));
+      setTakenData((prev) => ({ ...prev, emails: [...prev.emails, email] }));
+    } else if (data?.message === "OK_SUCCESS") {
+      alert("Registrato");
+      if (receivedUserId) {
+        setUserId(receivedUserId);
+        setLoading(true);
+        setCode(new Array(6).fill(""));
+        inputsRef.current[0]?.focus();
+      }
+    } else {
+      alert("Unexpected error. Please try again.");
+    }
+
+    setIsProcessing(false);
+  };
+
   const handleVerifyOtp = async (otpValue) => {
     if (isProcessing) return;
     setIsProcessing(true);
     setStatus((prev) => ({ ...prev, code: null }));
 
     try {
-      const response = await fetch(
-        "https://techripples.vercel.app/api/verify-otp",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            user_id: userId,
-            otp_code: otpValue,
-          }),
-        }
-      );
-
-      const text = await response.text();
-      console.log("RAW RESPONSE:", text);
-
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch (err) {
-        console.error("Invalid JSON:", text);
-      }
-
-      if (!response.ok) {
-        throw new Error(data.error || "Verifica fallita.");
-      }
-
-      alert("Verification successful! You can now log in.");
-      navigate("/login");
+      const res = await fetch("https://techripples.vercel.app/api/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId, otp_code: otpValue }),
+      });
+      const text = await res.text();
+      const data = JSON.parse(text);
+      if (!res.ok) throw new Error(data.error || "Verification failed");
+      setValidCode(true);
     } catch (err) {
       setStatus((prev) => ({ ...prev, code: err.message }));
       setCode(new Array(6).fill(""));
@@ -95,135 +162,9 @@ function Signup() {
     }
   };
 
-  // --- HANDLE CHANGE ---
-  const handleChange = (field, value, index = 0) => {
-    if (field === "code") {
-      const newCode = [...code];
-      const val = value.slice(-1);
-      newCode[index] = val;
-      setCode(newCode);
-
-      if (val && index < code.length - 1) {
-        inputsRef.current[index + 1]?.focus();
-      }
-      return;
-    }
-
-    setForm((prev) => ({ ...prev, [field]: value }));
-
-    let error = "";
-    let isValid = false;
-
-    switch (field) {
-      case "username":
-        if (!usernameRegex.test(value))
-          error = "Invalid username (3-20 chars, letters/numbers only)";
-        else if (takenData.usernames.includes(value))
-          error = "Username already taken";
-        else isValid = true;
-        break;
-
-      case "email":
-        if (!emailRegex.test(value)) error = "Invalid email format";
-        else if (takenData.emails.includes(value))
-          error = "Email already taken";
-        else isValid = true;
-        break;
-
-      case "password":
-        if (!passwordRegex.test(value)) error = "Weak password";
-        else {
-          isValid = true;
-          setShowPasswordChecklist(false);
-        }
-        break;
-
-      default:
-        break;
-    }
-
-    setStatus((prev) => ({
-      errors: { ...prev.errors, [field]: error },
-      valid: { ...prev.valid, [field]: isValid },
-    }));
-  };
-
-  // --- REGISTRAZIONE ---
-  async function handleRegister(username, email, password) {
-    const allValid =
-      Object.values(status.valid).every((v) => v === true) &&
-      form.username &&
-      form.email &&
-      form.password;
-
-    if (!allValid) {
-      alert("Please correct the errors in the form.");
-      return;
-    }
-
-    setIsProcessing(true);
-
-    const client = new SupabaseClient();
-    const data = await client.create_account(username, email, password);
-
-    const error = data?.error;
-    const receivedUserId = data?.user_id;
-
-    switch (error || data?.message) {
-      case "USERNAME_TAKEN":
-        setStatus((prev) => ({
-          errors: {
-            ...prev.errors,
-            username: "Username already taken. Please choose another one.",
-          },
-          valid: { ...prev.valid, username: false },
-        }));
-        setTakenData((prev) => ({
-          ...prev,
-          usernames: [...prev.usernames, username],
-        }));
-        break;
-
-      case "EMAIL_TAKEN":
-        setStatus((prev) => ({
-          errors: {
-            ...prev.errors,
-            email: "Email already registered. Please use another email.",
-          },
-          valid: { ...prev.valid, email: false },
-        }));
-        setTakenData((prev) => ({
-          ...prev,
-          emails: [...prev.emails, email],
-        }));
-        break;
-
-      case "OK_SUCCESS":
-        alert("registrato");
-        if (receivedUserId) {
-          setUserId(receivedUserId);
-          setLoading(true);
-          setCode(new Array(6).fill(""));
-          inputsRef.current[0]?.focus();
-        } else {
-          alert(
-            "Registration succeeded, but failed to get user ID for verification."
-          );
-        }
-        break;
-
-      default:
-        alert("An unexpected error occurred. Please try again later.");
-        break;
-    }
-
-    setIsProcessing(false);
-  }
-
   const handleCodeKeyDown = (e, i) => {
-    if (e.key === "Backspace" && !code[i] && i > 0) {
+    if (e.key === "Backspace" && !code[i] && i > 0)
       inputsRef.current[i - 1]?.focus();
-    }
   };
 
   return (
@@ -268,7 +209,6 @@ function Signup() {
           <h1 style={{ color: "#fff", textAlign: "center", marginTop: "0px" }}>
             Sign Up For Free
           </h1>
-
           <input
             className={`input-auth ${status.valid.username ? "valid" : ""} ${
               status.errors.username ? "invalid" : ""
@@ -348,17 +288,18 @@ function Signup() {
           </button>
 
           <div className="disclaimer-container">
-            By clicking the "Create account" button, I expressly agree to the{" "}
+            By clicking "Create account", I agree to the{" "}
             <span
               className="link"
               onClick={() => navigate("/terms-of-service")}
             >
-              TechRipples Terms of Service{" "}
+              TechRipples Terms of Service
             </span>{" "}
-            and understand that my account information will be used according to{" "}
+            and{" "}
             <span className="link" onClick={() => navigate("/privacy-policy")}>
-              TechRipples Privacy Policy{" "}
-            </span>{" "}
+              Privacy Policy
+            </span>
+            .
           </div>
 
           <div className="signup-div">
@@ -368,6 +309,14 @@ function Signup() {
             </h4>
           </div>
         </form>
+      ) : validCode ? (
+        <div className="div-auth">
+          <center>
+            <h1 style={{ color: "green", fontWeight: "bold" }}>
+              Account verified! Redirecting to login...
+            </h1>
+          </center>
+        </div>
       ) : (
         <div className="div-auth">
           <h2>Verification Code</h2>
@@ -375,7 +324,6 @@ function Signup() {
             Please enter the verification code sent to{" "}
             <strong style={{ color: "#fff" }}>{form.email}</strong>
           </h3>
-
           <div className={`otp-container ${status.code ? "error" : ""}`}>
             {code.map((digit, i) => (
               <input
@@ -393,7 +341,10 @@ function Signup() {
               />
             ))}
           </div>
-
+          <h3>
+            This code will expire in 5 minutes. You can request a new one after
+            it expires.
+          </h3>
           {status.code && (
             <p className="error-text" style={{ marginTop: "10px" }}>
               {status.code}
