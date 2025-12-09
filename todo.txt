@@ -1,0 +1,18 @@
+aggiungere x header api chiamate con chiave segreta
+migliorare regex password
+aggiungere che se premi utente da loggato va diretto su dashboard e se si cerca di andare manualamente in login e signup va dashboard
+aggiungere che se si va su dashboard da non loggato va su login
+migliorare grafica otp e soprattuto timer con testo verificato
+mettere in signup e login password con occhio visibile
+modulizzare tutto signup e login
+capire come funziona la sessione e la gestione e valutare se crare slice utente
+animazione login e signup capire come fuzniona e metterla bene
+aggiungere indexing google
+aggiungere adsense
+creare tema
+rivedere css varie dimensioni
+aggiungere che se si clicca sul logo e nome si va home
+normalizzare font e dimensioni
+centrare testo negli header in modo assoluto cosi da rimanere al centro nonostante gli altri elementi
+
+aggiungere cose per accessibilita tipo non vedenti, contrasto alto

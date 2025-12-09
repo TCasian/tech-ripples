@@ -1,13 +1,20 @@
 import React, { useState, useRef, useEffect } from "react";
 import "./auth.css";
-import PixelBlast from "./PixelBlast";
-import { CheckboxItem } from "../../componenti/checkbox";
+import { CheckboxItem } from "../../componenti/checkbox.jsx";
 import Typewriter from "../../componenti/Typewriter.jsx";
+import PixelBlast from "../../componenti/PixelBlast.jsx";
+
 import { useNavigate } from "react-router-dom";
 import { SupabaseClient } from "../../services/supabaseClient.js";
 
+// --- Validation Regex ---
+const usernameRegex = /^[a-zA-Z0-9._]{3,20}$/;
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const passwordRegex =
+  /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&-])[A-Za-z\d@$!%*?&-]{8,}$/;
+
 function Signup() {
-  const navigate = useNavigate();
+  // -- hooks ---
   const [form, setForm] = useState({ username: "", email: "", password: "" });
   const [status, setStatus] = useState({ errors: {}, valid: {}, code: null });
   const [loading, setLoading] = useState(false);
@@ -17,12 +24,6 @@ function Signup() {
   const [validCode, setValidCode] = useState(false);
   const [takenData, setTakenData] = useState({ usernames: [], emails: [] });
   const [showPasswordChecklist, setShowPasswordChecklist] = useState(false);
-  const inputsRef = useRef([]);
-
-  const usernameRegex = /^[a-zA-Z0-9._]{3,20}$/;
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const passwordRegex =
-    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&-])[A-Za-z\d@$!%*?&-]{8,}$/;
 
   const passwordChecks = {
     length: form.password.length >= 8,
@@ -31,6 +32,8 @@ function Signup() {
     number: /\d/.test(form.password),
     symbol: /[@$!%*?&-]/.test(form.password),
   };
+  const inputsRef = useRef([]);
+  const navigate = useNavigate();
 
   // --- OTP automatic verify ---
   useEffect(() => {

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SupabaseClient } from "../../services/supabaseClient.js";
-
+import "./dashboard.css";
 export default function Dashboard() {
   const navigate = useNavigate();
   const client = new SupabaseClient();
@@ -11,11 +11,8 @@ export default function Dashboard() {
     async function fetchUser() {
       try {
         const u = await client.getUser();
-        if (!u) navigate("/login");
         setUser(u);
-      } catch {
-        alert("Errore nel recupero dell'utente. Effettua il login di nuovo.");
-      }
+      } catch {}
     }
     fetchUser();
   }, []);
@@ -28,40 +25,25 @@ export default function Dashboard() {
   };
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        height: "100vh",
-        color: "white",
-        background: "#111",
-      }}
-    >
-      <h1>Dashboard</h1>
-      {user ? (
-        <>
-          <p>
-            Benvenuto, <strong>{user.email}</strong>
-          </p>
-          <button
-            onClick={signOut}
-            style={{
-              padding: "10px 20px",
-              borderRadius: 6,
-              border: "none",
-              backgroundColor: "#ff4444",
-              color: "#fff",
-              cursor: "pointer",
-            }}
+    <div className="container-info">
+      <header className="header">
+        <div className="logo-section">
+          <img src="Logo.svg" alt="Logo" className="logo-img" />
+          <span className="logo-title">TechRipples</span>
+        </div>
+        <nav className={`nav active`}>
+          <div
+            className="nav-item"
+            style={{ fontWeight: "bold", fontSize: "2em" }}
           >
-            Sign Out
-          </button>
-        </>
-      ) : (
-        <p>Caricamento utente...</p>
-      )}
+            DASHBOARD
+          </div>
+        </nav>
+
+        <div className="icons">
+          <div className="icon" style={{ width: "4.5em" }}></div>
+        </div>
+      </header>
     </div>
   );
 }

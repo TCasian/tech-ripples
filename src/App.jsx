@@ -5,7 +5,7 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import Security from "./pages/security/security";
 import AddArticles from "./pages/add-articles/add-articles";
 import Login from "./pages/auth/login";
-import Signup from "./pages/auth/signup";
+import Signup from "./pages/signup/signup2";
 import Dashboard from "./pages/dashboard/dashboard";
 import Home from "./pages/home/Home.jsx";
 import { TermsOfService } from "./pages/policy/terms-of-service.jsx";

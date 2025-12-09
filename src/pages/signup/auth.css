@@ -129,6 +129,12 @@
   color: white;
   transition: border 0.2s ease, transform 0.2s ease;
 }
+.otp-box.invalid {
+  border: 1px solid red;
+}
+.otp-box.valid {
+  border: 1px solid green;
+}
 
 .otp-container.error {
   animation: shake 0.4s;
